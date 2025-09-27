@@ -127,6 +127,8 @@ async function sendAndStream(
   const request: Record<string, unknown> = {
     model,
     input: inputBlocks,
+    store: true,
+    reasoning: { effort: 'minimal' },
   };
 
   if (conversationId) {
@@ -154,7 +156,7 @@ async function sendAndStream(
 }
 
 async function main() {
-  const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+  const model = process.env.OPENAI_MODEL || 'gpt-5-mini';
   // Start a fresh conversation on each run unless an explicit CONVERSATION_ID is provided
   if (!process.env.CONVERSATION_ID) {
     await deleteSavedConversationId();
@@ -171,7 +173,7 @@ async function main() {
   console.log(chalk.gray(`Using conversation: ${conversationId}`));
 
   // Optional: opening line from assistant
-  console.log(chalk.green('Agent:'), 'Hey hey! Ready to riff? What’s on your mind?');
+  //console.log(chalk.green('Agent:'), 'Hey hey! Ready to riff? What’s on your mind?');
 
   // Loop
   while (true) {
