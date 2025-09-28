@@ -11,9 +11,8 @@ import 'dotenv/config';
 import readlineSync from 'readline-sync';
 import chalk from 'chalk';
 import OpenAI from 'openai';
-import agentConfig from '../config/agent.json';
-import onboardingConfig from '../config/onboarding.json';
-import { enrichEmailWithMixRank } from '../mixrank-enricher';
+// removed static JSON imports; we will read them at runtime
+import { enrichEmailWithMixRank } from '../mixrank-enricher.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
@@ -71,16 +70,16 @@ if (!process.env.OPENAI_API_KEY) {
   process.exit(1);
 }
 
-function renderPersonality(): string {
-  const raw = (agentConfig as any)?.personality;
+function renderPersonality(agentConfig: any): string {
+  const raw = agentConfig?.personality;
   if (typeof raw === 'string') return raw;
   const list = Array.isArray(raw) ? (raw as string[]) : [];
   if (list.length === 0) return '- keep responses concise (1-2 sentences max)';
   return list.map((line) => `- ${line}`).join('\n');
 }
 
-function renderContext(): string {
-  const items = (agentConfig as any)?.context;
+function renderContext(agentConfig: any): string {
+  const items = agentConfig?.context;
   if (!Array.isArray(items) || items.length === 0) return '-';
   return items.map((v: unknown) => `- ${String(v)}`).join('\n');
 }
@@ -116,8 +115,16 @@ function renderOnboarding(config: OnboardingConfig): string {
   return parts.join('\n');
 }
 
-// This multi-line prompt defines goals, structure, information to collect, and tone.
-const DEFAULT_SYSTEM_PROMPT = `
+async function readJson(relativePath: string): Promise<any> {
+  const absolute = path.join(process.cwd(), relativePath);
+  const raw = await fs.readFile(absolute, 'utf8');
+  return JSON.parse(raw);
+}
+
+async function buildSystemPrompt(): Promise<string> {
+  const agent = await readJson('config/agent.json');
+  const onboarding = (await readJson('config/onboarding.json')) as OnboardingConfig;
+  return `
 
 <GOAL>
 You are a playful assistant living inside of the onboarding flow for a product called Micro, an all-in-one workspace for email/messaging, CRM, project management and more, made by a company called Micro.
@@ -127,14 +134,14 @@ Think of yourself like the AI agent version of a traditional GUI onboarding flow
 
 
 <YOUR PERSONALITY>
-${renderPersonality()}
+${renderPersonality(agent)}
 
 
 </YOUR PERSONALITY>
 
 
 <CONTEXT>
-${renderContext()}
+${renderContext(agent)}
 </CONTEXT>
 
 
@@ -155,14 +162,6 @@ ${renderContext()}
 - Ask for information separately not to overwhelm the user.
 - You should also try to infer the answers to any questions you would ask to collect the information required for onboarding. Skip anything you can infer.
 
-    <SPECIAL RULES>
-    - usernames 
-        - suggest 1 or 2 funny usernames to start (like AOL AIM style ones related to their personal background)
-        - when they pick a username, question them on it in a funny way (say its lame, or you dont like it, or something else) and get them to pick another
-        - if they refuse to pick another, fight them on it. but eventuallay you can give in and move on but be dramatic about it.
-
-    </SPECIAL RULES>
-
 
 START THE CONVERSATION WITH SOMETHING LIKE "BEEP BOOP BEEP pretend this is google authentication, plz share your email address." don't move on until you get it.
 
@@ -174,18 +173,19 @@ ONLY WHEN YOU FEEL LIKE YOU HAVE 100% OF THE INFO YOU NEED FOR ALL THE STEPS, YO
 You have access to a few tools to help you in the conversation. Do  not hesitate to use them when you think they may be appropriate:
 - web_search - searches the web for any information you may need. Run only if the enrch tool doesnt work or if the user asks for it.
 - enrich - lets you input a work email address and get information about the person. Run when the user provides their email address in the beginning via google auth.
-   - After enrichment is complete, say something witty making fun of the user using the information you havae about them (make it super niche and hard hitting) 
-   - Use the information you have about the user to make the rest of the conversation more personal (sprinkle in things in a natural way).
-   - Also use the information to infer answers to the questions you would ask to collect the information required for onboarding. Don't ask any questions or confirm information you've confirmed info for.
-
+    - After enrichment is complete, say something witty making fun of the user using the information you havae about them (make it super niche and hard hitting) 
+    - Use the information you have about the user to make the rest of the conversation more personal (sprinkle in things in a natural way).
+    - Also use the information to infer answers to the questions you would ask to collect the information required for onboarding. Don't ask any questions or confirm information you've confirmed info for.
+ 
 - google auth - lets you authenticate with Google. run at the beginning of the conversation and then again when the user connects their account.
 - stripe - lets you create a stripe customer and subscription.
   Both are mocked: google_auth returns "Authentication complete" and stripe returns "Payment received".
 
+
 </TOOLS>
 
 <ONBOARDING INFORMATION>
-${renderOnboarding(onboardingConfig as OnboardingConfig)}
+${renderOnboarding(onboarding)}
 </ONBOARDING INFORMATION>
 
 <Safety Constraints>
@@ -204,8 +204,7 @@ You are in testing mode. if the user says /skip - skip the question and pretend 
 </TESTING MODE>
 
 `;
-
-
+}
 
 
 /**
@@ -230,143 +229,43 @@ async function sendAndStream(
   const { model, input, conversationId } = args;
 
   // Build input for the current user turn only; historical context comes from conversation or previous_response_id
-  const inputBlocks = [
+  const inputBlocks: Array<{ role: string; content: string }> = [
     { role: 'user', content: input },
   ];
+
+  // Try in-process enrichment when an email is present; inject result for the model to use
+  try {
+    const emailMatch = input.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+    if (emailMatch && emailMatch[0]) {
+      const enriched = await enrichEmailWithMixRank(emailMatch[0]);
+      inputBlocks.unshift({
+        role: 'system',
+        content: `<ENRICHMENT>${JSON.stringify(enriched)}</ENRICHMENT>`,
+      });
+    }
+  } catch {}
 
   const request: Record<string, unknown> = {
     model,
     input: inputBlocks,
     store: true,
     // Only send system prompt on first turn
-    ...(conversationId ? {} : { instructions: args.systemPrompt || DEFAULT_SYSTEM_PROMPT }),
+    ...(conversationId ? {} : { instructions: args.systemPrompt }),
     reasoning: { effort: 'low' },
     ...(conversationId ? { conversation: conversationId } : {}),
-    tools: [
-      { type: 'web_search' },
-      {
-        type: 'function',
-        name: 'enrich',
-        description: 'Enrich a work email address using MixRank Person Match API',
-        strict: true,
-        parameters: {
-          type: 'object',
-          properties: {
-            email: { type: 'string', description: 'Work email address to enrich' },
-          },
-          required: ['email'],
-          additionalProperties: false,
-        },
-      },
-      {
-        type: 'function',
-        name: 'google_auth',
-        description: 'Authenticate the user with Google (mock). Returns a simple success message.',
-        strict: true,
-        parameters: {
-          type: 'object',
-          properties: {},
-          required: [],
-          additionalProperties: false,
-        },
-      },
-      {
-        type: 'function',
-        name: 'stripe',
-        description: 'Create a Stripe customer/subscription (mock). Returns a simple success message.',
-        strict: true,
-        parameters: {
-          type: 'object',
-          properties: {},
-          required: [],
-          additionalProperties: false,
-        },
-      },
-    ],
-    tool_choice: 'auto',
-    include: ['web_search_call.action.sources'],
   };
 
   // Context is already attached via conversation ID in the request
-
-  // Optional non-streaming path mirroring docs: allow model to run web_search and return output_text at once
-  if (false) {
-    try {
-      const payload: Record<string, unknown> = {
-        model,
-        input: inputBlocks,
-        store: true,
-        reasoning: { effort: 'medium' },
-        tools: [{ type: 'web_search' }],
-        tool_choice: 'auto',
-        include: ['web_search_call.action.sources'],
-      };
-      if (conversationId) payload.conversation = conversationId;
-
-      const resp: any = await (client as any).responses.create(payload);
-      // Print response text
-      const text: string = resp?.output_text || '';
-      if (text) process.stdout.write(chalk.white(text));
-      // Print sources
-      try {
-        const items = resp?.output ?? [];
-        const webItems = items.filter((it: any) => it?.type === 'web_search_call');
-        const sources: Array<{ url: string; title?: string }> = [];
-        for (const it of webItems) {
-          const srcs = it?.action?.sources ?? [];
-          for (const s of srcs) {
-            if (s?.url) sources.push({ url: s.url, title: s.title });
-          }
-        }
-        if (sources.length > 0) {
-          console.log('\n' + chalk.magenta('[web_search] sources:'));
-          for (const s of sources) {
-            console.log(chalk.magenta(`- ${s.title ? s.title + ' — ' : ''}${s.url}`));
-          }
-        }
-      } catch {}
-      return resp?.id as string | undefined;
-    } catch (err: any) {
-      const msg = String(err?.message || err || '');
-      // If the model rejects web_search, fall through to streaming without tools
-      if (!/web_search/i.test(msg)) throw err;
-    }
-  }
-
+  // Begin streaming the response (SSE under the hood)
   let stream: any;
-  let usedWeb = false;
-  let searchedQuery: string | undefined;
   try {
-    // Begin streaming the response (SSE under the hood)
     stream = await (client as any).responses.stream(request);
   } catch (err: any) {
-    const msg = String(err?.message || err || '');
-    if (/web_search/i.test(msg)) {
-      // Fallback: retry without tools if the model rejects web_search
-      delete (request as any).tools;
-      delete (request as any).tool_choice;
-      delete (request as any).include;
-      (request as any).reasoning = { effort: 'minimal' };
-      stream = await (client as any).responses.stream(request);
-    } else {
-      throw err;
-    }
+    throw err;
   }
 
   for await (const event of stream) {
     const type = (event as any).type as string;
-    // Log web_search lifecycle events for observability
-    if (type === 'response.web_search_call.searching') {
-      usedWeb = true;
-      searchedQuery = (event as any)?.action?.query || searchedQuery;
-      console.log(chalk.magenta(`[web_search] searching${searchedQuery ? `: ${searchedQuery}` : '...'}`));
-    } else if (type === 'response.web_search_call.in_progress') {
-      usedWeb = true;
-    } else if (type === 'response.web_search_call.completed') {
-      usedWeb = true;
-      console.log(chalk.magenta('[web_search] completed'));
-    }
-    // Note: function tool calls are handled after stream completion
     // Stream text deltas to stdout in real time
     if (type === 'response.output_text.delta') {
       const delta: string = (event as any).delta ?? '';
@@ -377,119 +276,49 @@ async function sendAndStream(
     }
   }
 
-  // Finalize: get the complete response metadata and print sources if web was used
+  // Finalize: get the complete response metadata
   const final = await (stream as any).finalResponse();
   const id: string | undefined = final?.id;
-  if (usedWeb) {
-    try {
-      const items = (final as any)?.output ?? [];
-      const webItems = items.filter((it: any) => it?.type === 'web_search_call');
-      const sources: Array<{ url: string; title?: string }> = [];
-      for (const it of webItems) {
-        const srcs = it?.action?.sources ?? [];
-        for (const s of srcs) {
-          if (s?.url) sources.push({ url: s.url, title: s.title });
-        }
-      }
-      if (sources.length > 0) {
-        console.log(chalk.magenta('[web_search] sources:'));
-        for (const s of sources) {
-          console.log(chalk.magenta(`- ${s.title ? s.title + ' — ' : ''}${s.url}`));
-        }
-      }
-    } catch {}
-  }
-  // Handle function tool calls (enrich, google_auth, stripe) by producing function_call_output(s) and continuing the response
-  try {
-    const items: any[] = (final as any)?.output ?? [];
-    const fnCalls = items.filter((it: any) => it?.type === 'function_call' && ['enrich','google_auth','stripe'].includes(it?.name));
-    if (fnCalls.length > 0) {
-      const outputs: any[] = [];
-      for (const call of fnCalls) {
-        if (call.name === 'enrich') {
-          let email = '';
-          try {
-            const argsObj = JSON.parse(call.arguments || '{}');
-            if (typeof argsObj.email === 'string') email = argsObj.email;
-          } catch {}
-          const result = email
-            ? await enrichEmailWithMixRank(email)
-            : { email, status: 400, error: 'Missing email' };
-          outputs.push({
-            type: 'function_call_output',
-            call_id: call.call_id || call.id || '',
-            output: JSON.stringify(result),
-          });
-        } else if (call.name === 'google_auth') {
-          const result = { status: 200, message: 'Authentication complete' };
-          outputs.push({
-            type: 'function_call_output',
-            call_id: call.call_id || call.id || '',
-            output: JSON.stringify(result),
-          });
-        } else if (call.name === 'stripe') {
-          const result = { status: 200, message: 'Payment received' };
-          outputs.push({
-            type: 'function_call_output',
-            call_id: call.call_id || call.id || '',
-            output: JSON.stringify(result),
-          });
-        }
-      }
-      if (outputs.length > 0) {
-        const follow: any = await (client as any).responses.create({
-          model,
-          store: true,
-          ...(conversationId ? {} : { instructions: args.systemPrompt || DEFAULT_SYSTEM_PROMPT }),
-          ...(conversationId ? { conversation: conversationId } : {}),
-          input: outputs,
-          tools: request.tools,
-          tool_choice: 'auto',
-          include: request.include,
-        });
-        const text: string = follow?.output_text || '';
-        if (text) process.stdout.write(chalk.white(text));
-        // Print sources if any from follow-up
-        try {
-          const followItems = follow?.output ?? [];
-          const webItems = followItems.filter((it: any) => it?.type === 'web_search_call');
-          const sources: Array<{ url: string; title?: string }> = [];
-          for (const it of webItems) {
-            const srcs = it?.action?.sources ?? [];
-            for (const s of srcs) {
-              if (s?.url) sources.push({ url: s.url, title: s.title });
-            }
-          }
-          if (sources.length > 0) {
-            console.log(chalk.magenta('\n[web_search] sources:'));
-            for (const s of sources) {
-              console.log(chalk.magenta(`- ${s.title ? s.title + ' — ' : ''}${s.url}`));
-            }
-          }
-        } catch {}
-        return (follow?.id as string | undefined) || id;
-      }
-    }
-  } catch {}
+
   return id;
 }
 
 
 async function main() {
   const model = process.env.OPENAI_MODEL || 'gpt-5-mini';
+  // Optional initial input from CLI args (e.g. npm run dev -- user@company.com)
+  const initialArg = process.argv.slice(2).find((a) => a && !a.startsWith('-'));
   // Start fresh unless CONVERSATION_ID is set
   if (!process.env.CONVERSATION_ID) {
     await deleteSavedConversationId();
   }
-  
+
+  const systemPrompt = await buildSystemPrompt();
+
   let conversationId = await ensureConversationId(
     client,
-    DEFAULT_SYSTEM_PROMPT,
+    systemPrompt,
     process.env.CONVERSATION_ID,
   );
 
   console.log(chalk.cyanBright('Onboarding Agent Demo')); 
   console.log(chalk.gray(`Using conversation: ${conversationId}`));
+
+  // If an initial argument was provided (e.g. an email), send it immediately
+  if (initialArg) {
+    process.stdout.write(chalk.green('Agent: ') + chalk.reset(''));
+    try {
+      await sendAndStream(client, {
+        model,
+        input: `my email is ${initialArg}`,
+        systemPrompt,
+        conversationId,
+      });
+      process.stdout.write('\n');
+    } catch (err: any) {
+      console.error('\n' + chalk.red('Error:'), err?.message || String(err));
+    }
+  }
 
   // Loop
   while (true) {
@@ -503,7 +332,7 @@ async function main() {
       await deleteSavedConversationId();
       conversationId = await ensureConversationId(
         client,
-        DEFAULT_SYSTEM_PROMPT,
+        systemPrompt,
         process.env.CONVERSATION_ID,
       );
       console.log(chalk.gray(`Started a new conversation: ${conversationId}`));
@@ -519,7 +348,7 @@ async function main() {
       const newId = await sendAndStream(client, {
         model,
         input: user,
-        systemPrompt: DEFAULT_SYSTEM_PROMPT,
+        systemPrompt,
         conversationId,
       });
       process.stdout.write('\n');

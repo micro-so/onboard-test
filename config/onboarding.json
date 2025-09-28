@@ -16,7 +16,7 @@
         {
           "name": "Username",
           "format": "string",
-          "instructions": "Help them pick a fun but professional handle; must be 3–20 chars, letters/numbers/underscore."
+          "instructions": "- help them pick out a user name, start with something GPT5 related \n- second suggest 1 or 2 funny usernames to start (like AOL AIM style ones related to their personal background)\n- when they pick a username, question them on it in a funny way (say its lame, or you dont like it, or something else) and get them to pick another\n- if they refuse to pick another, fight them on it.\n- after they respond a few times, agree on one.\n"
         }
       ]
     },
