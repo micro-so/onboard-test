@@ -2,7 +2,7 @@
 
 import { Fragment, useMemo, useState } from 'react';
 import { useChat } from '@ai-sdk/react';
-import { GlobeIcon, CopyIcon, RefreshCcwIcon } from 'lucide-react';
+import { CopyIcon, RefreshCcwIcon } from 'lucide-react';
 import {
   Conversation,
   ConversationContent,
@@ -12,19 +12,9 @@ import { Message, MessageContent } from '@/components/ai-elements/message';
 import type { PromptInputMessage } from '@/components/ai-elements/prompt-input';
 import {
   PromptInput,
-  PromptInputActionAddAttachments,
-  PromptInputActionMenu,
-  PromptInputActionMenuContent,
-  PromptInputActionMenuTrigger,
   PromptInputAttachment,
   PromptInputAttachments,
   PromptInputBody,
-  PromptInputButton,
-  PromptInputModelSelect,
-  PromptInputModelSelectContent,
-  PromptInputModelSelectItem,
-  PromptInputModelSelectTrigger,
-  PromptInputModelSelectValue,
   PromptInputSubmit,
   PromptInputTextarea,
   PromptInputToolbar,
@@ -56,16 +46,8 @@ type UIMessage = {
   parts: MessagePart[];
 };
 
-const models = [
-  {
-    name: 'GPT 4o',
-    value: 'openai/gpt-4o',
-  },
-  {
-    name: 'Deepseek R1',
-    value: 'deepseek/deepseek-r1',
-  },
-];
+const DEFAULT_MODEL = 'openai/gpt-4o';
+const DEFAULT_WEB_SEARCH = false;
 
 const SAMPLE_SOURCES = [
   'https://example.com/article',
@@ -74,8 +56,6 @@ const SAMPLE_SOURCES = [
 
 export default function ChatBotDemo() {
   const [input, setInput] = useState('');
-  const [model, setModel] = useState<string>(models[0].value);
-  const [webSearch, setWebSearch] = useState(false);
   const { messages, sendMessage, status } = useChat({ api: '/api/chat' });
 
   const normalizedMessages: UIMessage[] = useMemo(() => {
@@ -138,8 +118,8 @@ export default function ChatBotDemo() {
       },
       {
         body: {
-          model,
-          webSearch,
+          model: DEFAULT_MODEL,
+          webSearch: DEFAULT_WEB_SEARCH,
         },
       },
     );
@@ -163,8 +143,8 @@ export default function ChatBotDemo() {
       { text },
       {
         body: {
-          model,
-          webSearch,
+          model: DEFAULT_MODEL,
+          webSearch: DEFAULT_WEB_SEARCH,
         },
       },
     );
@@ -253,41 +233,7 @@ export default function ChatBotDemo() {
           <PromptInputTextarea onChange={(event) => setInput(event.target.value)} value={input} />
         </PromptInputBody>
         <PromptInputToolbar>
-          <PromptInputTools>
-            <PromptInputActionMenu>
-              <PromptInputActionMenuTrigger />
-              <PromptInputActionMenuContent>
-                <PromptInputActionAddAttachments />
-              </PromptInputActionMenuContent>
-            </PromptInputActionMenu>
-            <PromptInputButton
-              onClick={() => setWebSearch(!webSearch)}
-              aria-pressed={webSearch}
-              className={webSearch ? 'bg-slate-900 text-white hover:bg-slate-800' : undefined}
-            >
-              <GlobeIcon size={16} />
-              <span>Search</span>
-            </PromptInputButton>
-            <PromptInputModelSelect
-              value={model}
-              onValueChange={(value) => {
-                setModel(value);
-              }}
-            >
-              <PromptInputModelSelectTrigger>
-                <PromptInputModelSelectValue>
-                  {models.find((item) => item.value === model)?.name ?? model}
-                </PromptInputModelSelectValue>
-              </PromptInputModelSelectTrigger>
-              <PromptInputModelSelectContent>
-                {models.map((model) => (
-                  <PromptInputModelSelectItem key={model.value} value={model.value}>
-                    {model.name}
-                  </PromptInputModelSelectItem>
-                ))}
-              </PromptInputModelSelectContent>
-            </PromptInputModelSelect>
-          </PromptInputTools>
+          <PromptInputTools />
           <PromptInputSubmit status={status} />
         </PromptInputToolbar>
       </PromptInput>
