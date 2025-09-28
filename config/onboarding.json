@@ -1,0 +1,70 @@
+{
+  "sections": [
+    {
+      "section": "Account Setup",
+      "datapoints": [
+        {
+          "name": "Full name",
+          "format": "string",
+          "instructions": "Ask for their full legal name or preferred display name."
+        },
+        {
+          "name": "Email address",
+          "format": "email",
+          "instructions": "Collect a valid email. Prefer a work email if available."
+        },
+        {
+          "name": "Username",
+          "format": "string",
+          "instructions": "- help them pick out a user name, start with something GPT5 related \n- second suggest 1 or 2 funny usernames to start (like AOL AIM style ones related to their personal background)\n- when they pick a username, question them on it in a funny way (say its lame, or you dont like it, or something else) and get them to pick another\n- if they refuse to pick another, fight them on it.\n- after they respond a few times, agree on one.\n"
+        }
+      ]
+    },
+    {
+      "section": "Workspace Setup",
+      "datapoints": [
+        {
+          "name": "Workspace name",
+          "format": "string",
+          "instructions": "Usually their company or team name."
+        },
+        {
+          "name": "Team members to invite",
+          "format": "email_list",
+          "instructions": "Comma-separated list of emails; optional for now."
+        }
+      ]
+    },
+    {
+      "section": "Connect accounts",
+      "datapoints": [
+        {
+          "name": "Google",
+          "format": "boolean",
+          "instructions": "Offer to connect Google now; optional and can be done later."
+        },
+        {
+          "name": "LinkedIn",
+          "format": "boolean",
+          "instructions": "Offer to connect LinkedIn now; optional and can be done later."
+        }
+      ]
+    },
+    {
+      "section": "Checkout",
+      "datapoints": [
+        {
+          "name": "Plan",
+          "format": "enum",
+          "instructions": "Choose from Free, Standard, Pro, or Enterprise; Standard has 14-day trial.",
+          "options": [
+            "Free",
+            "Standard",
+            "Pro",
+            "Enterprise"
+          ]
+        }
+      ]
+    }
+  ]
+}
