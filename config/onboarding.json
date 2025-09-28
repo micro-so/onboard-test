@@ -1,0 +1,67 @@
+{
+  "sections": [
+    {
+      "section": "Account Setup",
+      "datapoints": [
+        {
+          "name": "Full name",
+          "format": "string",
+          "instructions": "Ask for their full legal name or preferred display name."
+        },
+        {
+          "name": "Email address",
+          "format": "email",
+          "instructions": "Collect a valid email. Prefer a work email if available."
+        },
+        {
+          "name": "Username",
+          "format": "string",
+          "instructions": "Help them pick a fun but professional handle; must be 3–20 chars, letters/numbers/underscore."
+        }
+      ]
+    },
+    {
+      "section": "Workspace Setup",
+      "datapoints": [
+        {
+          "name": "Workspace name",
+          "format": "string",
+          "instructions": "Usually their company or team name."
+        },
+        {
+          "name": "Team members to invite",
+          "format": "email_list",
+          "instructions": "Comma-separated list of emails; optional for now."
+        }
+      ]
+    },
+    {
+      "section": "Connect accounts",
+      "datapoints": [
+        {
+          "name": "Google",
+          "format": "boolean",
+          "instructions": "Offer to connect Google now; optional and can be done later."
+        },
+        {
+          "name": "LinkedIn",
+          "format": "boolean",
+          "instructions": "Offer to connect LinkedIn now; optional and can be done later."
+        }
+      ]
+    },
+    {
+      "section": "Checkout",
+      "datapoints": [
+        {
+          "name": "Plan",
+          "format": "enum",
+          "instructions": "Choose from Free, Standard, Pro, or Enterprise; Standard has 14-day trial.",
+          "options": ["Free", "Standard", "Pro", "Enterprise"]
+        }
+      ]
+    }
+  ]
+}
+
+
