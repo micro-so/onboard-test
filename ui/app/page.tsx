@@ -8,6 +8,13 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { Plus } from 'lucide-react'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 type AgentConfig = {
   personality: string;
@@ -78,7 +85,7 @@ export default function Home() {
 
   return (
     <main className="mx-auto max-w-4xl p-8 space-y-8">
-      <h1 className="text-2xl font-semibold">Config Editor</h1>
+      <h1 className="text-2xl font-semibold">Onboarding Agent Settings</h1>
       <Separator />
 
       {/* Agent Editor */}
@@ -198,14 +205,36 @@ export default function Home() {
                       </div>
                       <div className="space-y-2">
                         <Label>Format</Label>
-                        <Input
+                        <Select
                           value={dp.format}
-                          onChange={(e) => {
+                          onValueChange={(val) => {
                             const next = structuredClone(onboarding)
-                            next.sections[sIdx].datapoints[dIdx].format = e.target.value
+                            next.sections[sIdx].datapoints[dIdx].format = val
                             setOnboarding(next)
                           }}
-                        />
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select format" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Array.from(
+                              new Set([
+                                ...onboarding.sections.flatMap((s) =>
+                                  s.datapoints.map((p) => p.format),
+                                ),
+                                'string',
+                                'email',
+                                'email_list',
+                                'boolean',
+                                'enum',
+                              ]),
+                            ).map((fmt) => (
+                              <SelectItem key={fmt} value={fmt}>
+                                {fmt}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
                     <div className="space-y-2">
@@ -220,20 +249,22 @@ export default function Home() {
                         }}
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label>Options (comma separated)</Label>
-                      <Input
-                        value={(dp.options || []).join(', ')}
-                        onChange={(e) => {
-                          const next = structuredClone(onboarding)
-                          next.sections[sIdx].datapoints[dIdx].options = e.target.value
-                            .split(',')
-                            .map((s) => s.trim())
-                            .filter(Boolean)
-                          setOnboarding(next)
-                        }}
-                      />
-                    </div>
+                    {dp.format === 'enum' && (
+                      <div className="space-y-2">
+                        <Label>Options (comma separated)</Label>
+                        <Input
+                          value={(dp.options || []).join(', ')}
+                          onChange={(e) => {
+                            const next = structuredClone(onboarding)
+                            next.sections[sIdx].datapoints[dIdx].options = e.target.value
+                              .split(',')
+                              .map((s) => s.trim())
+                              .filter(Boolean)
+                            setOnboarding(next)
+                          }}
+                        />
+                      </div>
+                    )}
                     <div className="flex justify-end">
                       <Button
                         variant="destructive"
