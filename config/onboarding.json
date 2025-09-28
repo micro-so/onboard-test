@@ -57,11 +57,14 @@
           "name": "Plan",
           "format": "enum",
           "instructions": "Choose from Free, Standard, Pro, or Enterprise; Standard has 14-day trial.",
-          "options": ["Free", "Standard", "Pro", "Enterprise"]
+          "options": [
+            "Free",
+            "Standard",
+            "Pro",
+            "Enterprise"
+          ]
         }
       ]
     }
   ]
 }
-
-
