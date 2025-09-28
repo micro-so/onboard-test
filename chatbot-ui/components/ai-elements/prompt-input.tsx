@@ -45,7 +45,7 @@ export function PromptInput({ className, children, onSubmit, ...props }: PromptI
 
   return (
     <form
-      className={cn('rounded-xl border border-slate-200 bg-white shadow-sm', className)}
+      className={cn('rounded-3xl border border-slate-200 bg-white shadow-sm', className)}
       onSubmit={(event) => {
         event.preventDefault();
         onSubmit({ text, files });
@@ -72,7 +72,7 @@ export function PromptInputTextarea({ className, onChange, value = '', ...props 
   }, [value, context]);
   return (
     <textarea
-      className={cn('min-h-[80px] w-full resize-none rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400', className)}
+      className={cn('min-h-[80px] w-full resize-none rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400', className)}
       onChange={(event) => {
         context.setText(event.target.value);
         onChange?.(event);
@@ -141,7 +141,7 @@ export function PromptInputSubmit({ status, className, disabled, ...props }: But
   return (
     <button
       type="submit"
-      className={cn('rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50', className)}
+      className={cn('rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50', className)}
       disabled={shouldDisable}
       {...props}
     >
