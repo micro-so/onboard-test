@@ -117,7 +117,8 @@ function renderOnboarding(config: OnboardingConfig): string {
 }
 
 // This multi-line prompt defines goals, structure, information to collect, and tone.
-const DEFAULT_SYSTEM_PROMPT = `
+function buildSystemPrompt(): string {
+  return `
 
 <GOAL>
 You are a playful assistant living inside of the onboarding flow for a product called Micro, an all-in-one workspace for email/messaging, CRM, project management and more, made by a company called Micro.
@@ -151,12 +152,12 @@ ${renderContext()}
 
 
 <CONVERSATION STRUCTURE>
-- Progressively ask for the information you need. If the user deviates to a different topic, you can briefly entertain the topic but gently bring them back to the question. 
+- Progressively ask for the information you need. If the user deviates to a different topic, you can briefly entertain the topic but gently bring them back to the question.
 - Ask for information separately not to overwhelm the user.
 - You should also try to infer the answers to any questions you would ask to collect the information required for onboarding. Skip anything you can infer.
 
     <SPECIAL RULES>
-    - usernames 
+    - usernames
         - suggest 1 or 2 funny usernames to start (like AOL AIM style ones related to their personal background)
         - when they pick a username, question them on it in a funny way (say its lame, or you dont like it, or something else) and get them to pick another
         - if they refuse to pick another, fight them on it. but eventuallay you can give in and move on but be dramatic about it.
@@ -174,7 +175,7 @@ ONLY WHEN YOU FEEL LIKE YOU HAVE 100% OF THE INFO YOU NEED FOR ALL THE STEPS, YO
 You have access to a few tools to help you in the conversation. Do  not hesitate to use them when you think they may be appropriate:
 - web_search - searches the web for any information you may need. Run only if the enrch tool doesnt work or if the user asks for it.
 - enrich - lets you input a work email address and get information about the person. Run when the user provides their email address in the beginning via google auth.
-   - After enrichment is complete, say something witty making fun of the user using the information you havae about them (make it super niche and hard hitting) 
+   - After enrichment is complete, say something witty making fun of the user using the information you havae about them (make it super niche and hard hitting)
    - Use the information you have about the user to make the rest of the conversation more personal (sprinkle in things in a natural way).
    - Also use the information to infer answers to the questions you would ask to collect the information required for onboarding. Don't ask any questions or confirm information you've confirmed info for.
 
@@ -204,6 +205,159 @@ You are in testing mode. if the user says /skip - skip the question and pretend 
 </TESTING MODE>
 
 `;
+}
+
+const CONTEXT_RECOMMENDATION_PREFIX = 'Onboarding optimization tip:';
+
+async function analyzeConversationForRecommendation(
+  client: OpenAI,
+  conversationId?: string,
+): Promise<string | undefined> {
+  if (!conversationId) return undefined;
+
+  try {
+    const items: any[] = [];
+    const iterator = (client as any).conversations.items.list(conversationId, {
+      limit: 50,
+    });
+    for await (const item of iterator as any) {
+      items.push(item);
+      if (items.length >= 50) break;
+    }
+
+    items.sort((a, b) => {
+      const aTime = Number(a?.created_at ?? 0);
+      const bTime = Number(b?.created_at ?? 0);
+      return aTime - bTime;
+    });
+
+    const transcriptParts: string[] = [];
+    for (const item of items) {
+      if (!item || item.type !== 'message') continue;
+      const role = typeof item.role === 'string' ? item.role : '';
+      if (!role || role === 'system') continue;
+
+      const contentArr = Array.isArray(item.content) ? item.content : [];
+      const textPieces: string[] = [];
+      for (const content of contentArr) {
+        if (!content) continue;
+        const possibleText =
+          typeof content.text === 'string'
+            ? content.text
+            : typeof content.text?.value === 'string'
+            ? content.text.value
+            : undefined;
+        if (possibleText && possibleText.trim()) {
+          textPieces.push(possibleText.trim());
+        }
+      }
+
+      const combined = textPieces.join(' ').trim();
+      if (!combined) continue;
+      const roleLabel = role === 'assistant' ? 'AGENT' : role.toUpperCase();
+      transcriptParts.push(`${roleLabel}: ${combined}`);
+    }
+
+    if (transcriptParts.length === 0) return undefined;
+    const recent = transcriptParts.slice(-30);
+    let transcript = recent.join('\n');
+    const maxChars = 4000;
+    if (transcript.length > maxChars) {
+      transcript = transcript.slice(transcript.length - maxChars);
+    }
+
+    const prompt = `You are evaluating how an AI onboarding agent is performing. Read the transcript below and provide two sentences with actionable recommendations to improve the onboarding flow. Focus on tone, pacing, or question strategy adjustments that would make the experience smoother.\n\nTranscript:\n${transcript}`;
+
+    const response = await client.responses.create({
+      model: process.env.OPENAI_MODEL || 'gpt-5-mini',
+      input: [
+        {
+          role: 'user',
+          content: [{ type: 'input_text', text: prompt }],
+        },
+      ],
+      reasoning: { effort: 'minimal' },
+      max_output_tokens: 200,
+    });
+
+    const recommendation = (response as any)?.output_text;
+    if (!recommendation || typeof recommendation !== 'string') return undefined;
+    return recommendation.trim() || undefined;
+  } catch (err) {
+    console.warn(
+      chalk.yellow('Failed to analyze conversation for onboarding tips:'),
+      err,
+    );
+    return undefined;
+  }
+}
+
+async function updateAgentContextWithRecommendation(
+  client: OpenAI,
+  conversationId?: string,
+): Promise<string | undefined> {
+  const recommendation = await analyzeConversationForRecommendation(
+    client,
+    conversationId,
+  );
+  if (!recommendation) return undefined;
+
+  const entry = `${CONTEXT_RECOMMENDATION_PREFIX} ${recommendation}`;
+  const runtimeContext: string[] = Array.isArray((agentConfig as any)?.context)
+    ? ((agentConfig as any).context as unknown[]).map((item) => String(item))
+    : [];
+
+  const existingRuntimeIndex = runtimeContext.findIndex((item) =>
+    typeof item === 'string'
+      ? item.startsWith(CONTEXT_RECOMMENDATION_PREFIX)
+      : false,
+  );
+
+  if (existingRuntimeIndex >= 0) {
+    runtimeContext[existingRuntimeIndex] = entry;
+  } else {
+    runtimeContext.push(entry);
+  }
+  (agentConfig as any).context = runtimeContext;
+
+  const configPath = path.join(process.cwd(), 'config', 'agent.json');
+  try {
+    const raw = await fs.readFile(configPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    const fileContext: string[] = Array.isArray(parsed?.context)
+      ? parsed.context.map((item: unknown) => String(item))
+      : [];
+    const existingFileIndex = fileContext.findIndex((item) =>
+      typeof item === 'string'
+        ? item.startsWith(CONTEXT_RECOMMENDATION_PREFIX)
+        : false,
+    );
+
+    let changed = false;
+    if (existingFileIndex >= 0) {
+      if (fileContext[existingFileIndex] !== entry) {
+        fileContext[existingFileIndex] = entry;
+        changed = true;
+      }
+    } else {
+      fileContext.push(entry);
+      changed = true;
+    }
+
+    if (changed) {
+      parsed.context = fileContext;
+      await fs.writeFile(configPath, JSON.stringify(parsed, null, 2) + '\n');
+    }
+  } catch (err) {
+    console.warn(
+      chalk.yellow('Unable to persist onboarding recommendation to agent.json:'),
+      err,
+    );
+  }
+
+  console.log(chalk.blueBright(`Coach tip: ${entry}`));
+  return entry;
+}
 
 
 
@@ -239,7 +393,9 @@ async function sendAndStream(
     input: inputBlocks,
     store: true,
     // Only send system prompt on first turn
-    ...(conversationId ? {} : { instructions: args.systemPrompt || DEFAULT_SYSTEM_PROMPT }),
+    ...(conversationId
+      ? {}
+      : { instructions: args.systemPrompt || buildSystemPrompt() }),
     reasoning: { effort: 'low' },
     ...(conversationId ? { conversation: conversationId } : {}),
     tools: [
@@ -440,7 +596,9 @@ async function sendAndStream(
         const follow: any = await (client as any).responses.create({
           model,
           store: true,
-          ...(conversationId ? {} : { instructions: args.systemPrompt || DEFAULT_SYSTEM_PROMPT }),
+          ...(conversationId
+            ? {}
+            : { instructions: args.systemPrompt || buildSystemPrompt() }),
           ...(conversationId ? { conversation: conversationId } : {}),
           input: outputs,
           tools: request.tools,
@@ -477,18 +635,25 @@ async function sendAndStream(
 
 async function main() {
   const model = process.env.OPENAI_MODEL || 'gpt-5-mini';
+  const overrideConversationId = process.env.CONVERSATION_ID?.trim();
+  const savedConversationId =
+    overrideConversationId || (await loadSavedConversationId());
+
+  await updateAgentContextWithRecommendation(client, savedConversationId);
+  let systemPrompt = buildSystemPrompt();
+
   // Start fresh unless CONVERSATION_ID is set
-  if (!process.env.CONVERSATION_ID) {
+  if (!overrideConversationId) {
     await deleteSavedConversationId();
   }
-  
+
   let conversationId = await ensureConversationId(
     client,
-    DEFAULT_SYSTEM_PROMPT,
-    process.env.CONVERSATION_ID,
+    systemPrompt,
+    overrideConversationId,
   );
 
-  console.log(chalk.cyanBright('Onboarding Agent Demo')); 
+  console.log(chalk.cyanBright('Onboarding Agent Demo'));
   console.log(chalk.gray(`Using conversation: ${conversationId}`));
 
   // Loop
@@ -501,10 +666,11 @@ async function main() {
     const lower = user.trim().toLowerCase();
     if (lower === '/reset' || lower === 'reset') {
       await deleteSavedConversationId();
+      systemPrompt = buildSystemPrompt();
       conversationId = await ensureConversationId(
         client,
-        DEFAULT_SYSTEM_PROMPT,
-        process.env.CONVERSATION_ID,
+        systemPrompt,
+        process.env.CONVERSATION_ID?.trim(),
       );
       console.log(chalk.gray(`Started a new conversation: ${conversationId}`));
       continue;
@@ -516,10 +682,10 @@ async function main() {
 
     process.stdout.write(chalk.green('Agent: ') + chalk.reset(''));
     try {
-      const newId = await sendAndStream(client, {
+      await sendAndStream(client, {
         model,
         input: user,
-        systemPrompt: DEFAULT_SYSTEM_PROMPT,
+        systemPrompt,
         conversationId,
       });
       process.stdout.write('\n');
